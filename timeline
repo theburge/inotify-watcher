@@ -1,0 +1,145 @@
+#!/bin/sh
+# Print a timeline for a given file from a set of gzipped logs.
+
+# TODO: Consider colouring the output by event? By file state?
+# TODO: Implement end time.
+
+# Defaults.
+COLOUR='?' # Auto
+EVENT_REGEX='[c<>x]' # Create, rename, close (non-write).
+FILE_DESC_REGEX='.*' # Use filename as descriptor.
+PATH_REGEX='' # Match all files.
+START_TIME='00:00:00.000000' # Include all times.
+
+
+validate_regex() {
+    # Assume an unhappy exit means the regex is bogus.
+    if ! awk -vRE="$1" 'BEGIN { "." ~ RE; }' >/dev/null
+    then
+        printf 'Error: %s is not a valid awk regex string\n' "$1" 1>&2
+        exit 1
+    fi
+}
+
+
+while getopts ":hc:d:e:p:s:" ARG
+do
+    case "$ARG" in
+        h)
+            (
+            printf 'Usage: %s [-c <never|always|auto>] ' "$0"
+            printf '[-e <event-regex>] [-p <path-pattern>]\n'
+            printf '       [-s HH:MM:SS.ssssss] <gz-log> [<gz-log> ...]\n'
+            printf '\n'
+            printf 'Print a timeline for the specified events from gzipped '
+            printf 'event files in this directory\n'
+            printf '\n'
+            printf '  -c <when>:  colour output\n'
+            printf '  -d <regex>: pattern to extract a descriptor from the '
+            printf 'filename\n'
+            printf '  -e <regex>: event pattern to match\n'
+            printf '  -p <regex>: path pattern to match\n'
+            printf '  -s <time>:  start time for output\n'
+            printf '\n'
+            printf 'Note: All regexes are expressed in ERE, but are passed '
+            printf 'around as strings, so beware\nescape sequences...\n'
+            ) 1>&2
+            exit 1
+            ;;
+        c)
+            case "$OPTARG" in
+                never)
+                    COLOUR=0
+                    ;;
+                always)
+                    COLOUR=1
+                    ;;
+                auto) # Default.
+                    ;;
+                *)
+                    printf 'Error: Unknown colour option\n' 1>&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        d)
+            FILE_DESC_REGEX=$OPTARG
+            validate_regex "$FILE_DESC_REGEX"
+            ;;
+        e)
+            # TODO: A regex? Or a list of chars?
+            EVENT_REGEX=$OPTARG
+            validate_regex "$EVENT_REGEX"
+            ;;
+        p)
+            # TODO: Due to the log format, paths all end with a comma after
+            #       awk splitting...
+            #       Maybe it's worth trimming that off for matching.
+            PATH_REGEX=$OPTARG
+            validate_regex "$PATH_REGEX"
+            ;;
+        s)
+            # TODO: Validate/re-format if necessary.
+            #       Expecting HH:MM:SS.ssssss
+            START_TIME=$OPTARG
+            ;;
+        "?")
+            printf 'Error: Unrecognised option -%s\n' "$OPTARG" 1>&2
+            exit 1
+            ;;
+        :)
+            printf 'Error: Missing option for -%s\n' "$OPTARG" 1>&2
+            exit 1
+            ;;
+    esac
+done
+shift $(( OPTIND - 1 ))
+
+# Colour set-up.
+# Work out whether to enable colour when it's automatic.
+if [ "$COLOUR" = "?" ]
+then
+    [ ! -t 1 ]
+    COLOUR=$?
+fi
+# TODO: Restrict to a smaller set of colours to maintain legibility at the
+#       risk of repetition?
+COLOUR_COUNT=$(infocmp | \
+    sed -n 's/^[[:space:]]*colors#\([[:digit:]]*\).*$/\1/p')
+# TODO: Choose less foul colours?
+FILE_COLOUR=1 # Avoid colour 0, assuming it's background/illegible.
+
+# Read each file in turn, extracting the required results, then sort by
+# date/time.
+for EVENT_LOG
+do
+    # Use awk for consistency with other regex interpretations, even though
+    # grep -Eo would be easier...
+    # If it fails to match, simply print the input.
+    FILE_DESC=$(printf '%s' "$EVENT_LOG" | awk -vRE="$FILE_DESC_REGEX" '{
+            m = match($0, RE);
+            if (m)
+                print substr($0, m, RLENGTH);
+            else
+                print;
+        }')
+    # Add the file descriptor as a prefix to the lines to be output.
+    # Pass in terminal colour codes via the line PREFIX, if needed.
+    PREFIX=$( [ $COLOUR -eq 1 ] && tput setaf $FILE_COLOUR;
+              printf '%s ' "$FILE_DESC")
+    gunzip -c -- "$EVENT_LOG" | \
+        awk -vSTART="$START_TIME" -vPATH_REGEX="$PATH_REGEX" \
+            -vEVENT_REGEX="$EVENT_REGEX" -vPREFIX="$PREFIX" '
+            BEGIN {
+                START_MARKER = sprintf("%s:", START);
+            }
+
+            $2 >= START_MARKER &&
+            $6 ~ PATH_REGEX &&
+            $4 ~ EVENT_REGEX {
+                printf("%s%s\n", PREFIX, $0);
+            }'
+    # Cycle colours (but avoid colour 0, assuming it's background/illegible).
+    FILE_COLOUR=$(( (FILE_COLOUR % (COLOUR_COUNT - 1)) + 1 ))
+done | sort -k2,3
+[ $COLOUR -eq 1 ] && tput sgr0
