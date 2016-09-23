@@ -3,6 +3,7 @@
 
 # TODO: Consider colouring the output by event? By file state?
 # TODO: Implement end time.
+# TODO: Implement start/end date?
 
 # Defaults.
 COLOUR='?' # Auto
@@ -12,6 +13,16 @@ PATH_REGEX='' # Match all files.
 START_TIME='00:00:00.000000' # Include all times.
 
 
+# escape_regex_as_awk_string(regex) -> stdout:regex
+escape_regex_as_awk_string() {
+    # Double backslashes, since the regexes must be parsed as strings, then
+    # regexes, so the backslashes get folded four times.
+    # As for sed, it requires the backslash to be escaped. :)
+    printf '%s' "$1" | sed 's#\\#&&#g'
+}
+
+# validate_regex(regex)
+# Validate a regex and return if it's valid; otherwise die.
 validate_regex() {
     # Assume an unhappy exit means the regex is bogus.
     if ! awk -vRE="$1" 'BEGIN { "." ~ RE; }' >/dev/null
@@ -41,8 +52,7 @@ do
             printf '  -p <regex>: path pattern to match (default: all)\n'
             printf '  -s <time>:  start time for output (default: midnight)\n'
             printf '\n'
-            printf 'Note: All regexes are expressed in ERE, but are passed '
-            printf 'around as strings, so beware\nescape sequences...\n'
+            printf 'Note: All regexes must be expressed using ERE syntax.\n'
             ) 1>&2
             exit 1
             ;;
@@ -63,19 +73,18 @@ do
             esac
             ;;
         d)
-            FILE_DESC_REGEX=$OPTARG
+            FILE_DESC_REGEX=$(escape_regex_as_awk_string "$OPTARG")
             validate_regex "$FILE_DESC_REGEX"
             ;;
         e)
-            # TODO: A regex? Or a list of chars?
-            EVENT_REGEX=$OPTARG
+            EVENT_REGEX=$(escape_regex_as_awk_string "$OPTARG")
             validate_regex "$EVENT_REGEX"
             ;;
         p)
             # TODO: Due to the log format, paths all end with a comma after
             #       awk splitting...
             #       Maybe it's worth trimming that off for matching.
-            PATH_REGEX=$OPTARG
+            PATH_REGEX=$(escape_regex_as_awk_string "$OPTARG")
             validate_regex "$PATH_REGEX"
             ;;
         s)
