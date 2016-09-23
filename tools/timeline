@@ -6,7 +6,7 @@
 
 # Defaults.
 COLOUR='?' # Auto
-EVENT_REGEX='[c<>x]' # Create, rename, close (non-write).
+EVENT_REGEX='.' # Match all.
 FILE_DESC_REGEX='.*' # Use filename as descriptor.
 PATH_REGEX='' # Match all files.
 START_TIME='00:00:00.000000' # Include all times.
@@ -34,12 +34,12 @@ do
             printf 'Print a timeline for the specified events from gzipped '
             printf 'event files in this directory\n'
             printf '\n'
-            printf '  -c <when>:  colour output\n'
+            printf '  -c <when>:  colour output (default: auto)\n'
             printf '  -d <regex>: pattern to extract a descriptor from the '
-            printf 'filename\n'
-            printf '  -e <regex>: event pattern to match\n'
-            printf '  -p <regex>: path pattern to match\n'
-            printf '  -s <time>:  start time for output\n'
+            printf 'filename (default: none)\n'
+            printf '  -e <regex>: event pattern to match (default: all)\n'
+            printf '  -p <regex>: path pattern to match (default: all)\n'
+            printf '  -s <time>:  start time for output (default: midnight)\n'
             printf '\n'
             printf 'Note: All regexes are expressed in ERE, but are passed '
             printf 'around as strings, so beware\nescape sequences...\n'
